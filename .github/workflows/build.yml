@@ -108,6 +108,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max,ignore-error=true
+          provenance: false
           tags: |
             ghcr.io/${{ github.repository }}:${{ steps.check.outputs.alpha }}
           labels: |
@@ -123,6 +124,7 @@ jobs:
       # stable：更新 latest（这是 compose 里用的标签）；放在最后构建，
       # 保证 GitHub 包页面的 Latest 标记落在非 alpha 版本上
       - name: 构建并推送 stable（更新 latest）
+        id: stable
         if: steps.check.outputs.skip != 'true' && steps.check.outputs.build_stable == 'true'
         uses: docker/build-push-action@v6
         with:
@@ -131,6 +133,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max,ignore-error=true
+          provenance: false
           tags: |
             ghcr.io/${{ github.repository }}:${{ steps.check.outputs.stable }}
             ghcr.io/${{ github.repository }}:latest
@@ -143,3 +146,10 @@ jobs:
             org.opencontainers.image.licenses=NOASSERTION
           build-args: |
             DSH_VERSION=${{ steps.check.outputs.stable }}
+
+      # 多架构推送只给 index 打标签，各平台仍是裸 digest；这一步给它们各自命名
+      - name: 给 amd64 / arm64 单独打标签
+        if: steps.check.outputs.skip != 'true' && steps.check.outputs.build_stable == 'true'
+        run: |
+          set -euo pipefail
+          python3 scripts/tag-platforms.py "ghcr.io/${{ github.repository }}" "${{ steps.check.outputs.stable }}"
