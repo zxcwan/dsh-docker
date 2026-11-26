@@ -62,6 +62,7 @@ WORKDIR /src
 COPY gateway/go.mod gateway/go.sum ./
 RUN go mod download
 COPY gateway/ ./
+RUN go test ./...
 # 静态编译（CGO_ENABLED=0），运行时零 glibc 依赖
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/dsh-gateway .
 

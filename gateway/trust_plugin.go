@@ -93,8 +93,11 @@ func injectBootManifestEntry(html []byte) (patched []byte, bootFound, changed bo
 	}
 	end := start + relEnd
 
+	// release 是页面启动时的 Host 身份；必须原样透传，否则客户端启动身份变为 unknown，
+	// 随后收到带 release 的 Host graph 时会误报版本变化并暂停热更新。
 	var graph struct {
 		Rev     string            `json:"rev"`
+		Release json.RawMessage   `json:"release,omitempty"`
 		Entries []json.RawMessage `json:"entries"`
 		Batches []json.RawMessage `json:"batches,omitempty"` // 新版必填；旧版 host 无此键，omitempty 保持图形态不漂移
 	}

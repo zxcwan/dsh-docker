@@ -15,7 +15,7 @@ func sampleShellHTML() []byte {
 <html>
 <head>
 <meta charset="utf-8">
-<script>globalThis["__DSH_BOOT__"] = {"rev":"rev-abc","entries":[{"id":"@deepseek-ai/dsh-client-connection","url":"/plugins/@deepseek-ai/dsh-client-connection/client.js?rev=r1","rev":"r1","immediately":true},{"id":"@deepseek-ai/dsh-client-ui-settings","url":"/plugins/@deepseek-ai/dsh-client-ui-settings/client.js?rev=r2","rev":"r2","inject":[],"immediately":true}],"batches":[{"phase":"application","url":"/plugins/??@deepseek-ai/dsh-client-connection/client.js,@deepseek-ai/dsh-client-ui-settings/client.js&rev=r1","rev":"r1","entries":["@deepseek-ai/dsh-client-connection","@deepseek-ai/dsh-client-ui-settings"]}]}</script>
+<script>globalThis["__DSH_BOOT__"] = {"rev":"rev-abc","release":{"version":"0.2.1-rc.5","commit":"d4db512"},"entries":[{"id":"@deepseek-ai/dsh-client-connection","url":"/plugins/@deepseek-ai/dsh-client-connection/client.js?rev=r1","rev":"r1","immediately":true},{"id":"@deepseek-ai/dsh-client-ui-settings","url":"/plugins/@deepseek-ai/dsh-client-ui-settings/client.js?rev=r2","rev":"r2","inject":[],"immediately":true}],"batches":[{"phase":"application","url":"/plugins/??@deepseek-ai/dsh-client-connection/client.js,@deepseek-ai/dsh-client-ui-settings/client.js&rev=r1","rev":"r1","entries":["@deepseek-ai/dsh-client-connection","@deepseek-ai/dsh-client-ui-settings"]}]}</script>
 <link rel="stylesheet" href="/assets/index.css">
 </head>
 <body><div id="root"></div><script type="module" src="/assets/index.js"></script></body>
@@ -29,9 +29,10 @@ func legacyShellHTML() []byte {
 
 // 改写后 __DSH_BOOT__ 的类型化视图（与生产 wire 契约同构，避免 raw-JSON 字符串体操）
 type bootGraphView struct {
-	Rev     string      `json:"rev"`
-	Entries []bootEntry `json:"entries"`
-	Batches []bootBatch `json:"batches"`
+	Rev     string          `json:"rev"`
+	Release json.RawMessage `json:"release"`
+	Entries []bootEntry     `json:"entries"`
+	Batches []bootBatch     `json:"batches"`
 }
 
 func extractBootGraph(t *testing.T, html []byte) bootGraphView {
@@ -67,6 +68,16 @@ func TestInjectBootManifestEntry(t *testing.T) {
 	graph := extractBootGraph(t, patched)
 	if graph.Rev != "rev-abc" {
 		t.Fatalf("rev 被破坏: %s", graph.Rev)
+	}
+	var release struct {
+		Version string `json:"version"`
+		Commit  string `json:"commit"`
+	}
+	if err := json.Unmarshal(graph.Release, &release); err != nil {
+		t.Fatalf("release 未保留为合法 JSON: %v", err)
+	}
+	if release.Version != "0.2.1-rc.5" || release.Commit != "d4db512" {
+		t.Fatalf("release identity 被破坏: %+v", release)
 	}
 	if len(graph.Entries) != 3 {
 		t.Fatalf("应有 3 个条目（原 2 + 注入 1），实际 %d", len(graph.Entries))
@@ -152,6 +163,9 @@ func TestInjectLegacyMarkerAndGraph(t *testing.T) {
 	graph := extractBootGraph(t, patched)
 	if graph.Rev != "rev-legacy" {
 		t.Fatalf("旧版 rev 被破坏: %s", graph.Rev)
+	}
+	if len(graph.Release) != 0 {
+		t.Fatalf("旧版图不应凭空获得 release: %s", graph.Release)
 	}
 	if len(graph.Entries) != 2 {
 		t.Fatalf("旧版图注入后应有 2 个条目: %d", len(graph.Entries))
