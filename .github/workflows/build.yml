@@ -97,7 +97,31 @@ jobs:
         if: steps.check.outputs.skip != 'true'
         uses: docker/setup-buildx-action@v3
 
-      # stable：更新 latest（这是 compose 里用的标签）
+      # alpha：只打版本号，不碰 latest（先构建，让 stable 成为最后发布的版本，
+      # 这样 GitHub 包页面顶部的 Latest 会显示非 alpha 的版本）
+      - name: 构建并推送 alpha（只打版本号）
+        if: steps.check.outputs.skip != 'true' && steps.check.outputs.build_alpha == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max,ignore-error=true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ steps.check.outputs.alpha }}
+          labels: |
+            org.opencontainers.image.title=dsh-docker
+            org.opencontainers.image.description=DeepSeekRuntime (dsh) alpha build; not used by :latest.
+            org.opencontainers.image.version=${{ steps.check.outputs.alpha }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=NOASSERTION
+          build-args: |
+            DSH_VERSION=${{ steps.check.outputs.alpha }}
+
+      # stable：更新 latest（这是 compose 里用的标签）；放在最后构建，
+      # 保证 GitHub 包页面的 Latest 标记落在非 alpha 版本上
       - name: 构建并推送 stable（更新 latest）
         if: steps.check.outputs.skip != 'true' && steps.check.outputs.build_stable == 'true'
         uses: docker/build-push-action@v6
@@ -110,20 +134,12 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:${{ steps.check.outputs.stable }}
             ghcr.io/${{ github.repository }}:latest
+          labels: |
+            org.opencontainers.image.title=dsh-docker
+            org.opencontainers.image.description=DeepSeekRuntime (dsh) web image with the auth gateway. :latest tracks the newest non-alpha dsh release.
+            org.opencontainers.image.version=${{ steps.check.outputs.stable }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=NOASSERTION
           build-args: |
             DSH_VERSION=${{ steps.check.outputs.stable }}
-
-      # alpha：只打版本号，不碰 latest
-      - name: 构建并推送 alpha（只打版本号）
-        if: steps.check.outputs.skip != 'true' && steps.check.outputs.build_alpha == 'true'
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max,ignore-error=true
-          tags: |
-            ghcr.io/${{ github.repository }}:${{ steps.check.outputs.alpha }}
-          build-args: |
-            DSH_VERSION=${{ steps.check.outputs.alpha }}
