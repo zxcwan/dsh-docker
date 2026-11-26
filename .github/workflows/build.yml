@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: '17 3 * * *'   # 每天检查 dsh 是否有新版本
+    - cron: '0 2 * * *'   # 每天 02:00 UTC（北京 10:00）检查 dsh 新版本；留给 11:30 的插件检查足够余量
   workflow_dispatch:
     inputs:
       version:
