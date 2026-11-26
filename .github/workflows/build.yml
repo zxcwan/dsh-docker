@@ -6,6 +6,11 @@ on:
   schedule:
     - cron: '17 3 * * *'   # 每天检查 dsh 是否有新版本
   workflow_dispatch:
+    inputs:
+      version:
+        description: '手动指定 dsh 版本（如 0.2.2-rc.5）；留空则自动取最新非 alpha'
+        required: false
+        default: ''
 
 permissions:
   packages: write   # 推送 GHCR
@@ -25,31 +30,59 @@ jobs:
       - name: 检查 dsh 最新版本（以 GitHub release 为准，npm latest 会滞后）
         id: check
         run: |
+          set -euo pipefail
           # 纯 prerelease 仓库没有 releases/latest（404）。npm 发布晚于 GitHub
           # release：一次 packument（全部已发布版本）与 release 列表做交集，取
           # 最新可装版本，而不是整个跳过（否则代码修复永远进不了镜像）。
           # npm 版本只增不减，选择随列表增长单调前进，新版本上 npm 后定时任务
           # 自动升级。--max-time 防 registry 慢速时挂起。
-          NEW=$(curl -fsS --max-time 30 "https://registry.npmjs.org/@deepseek-ai/dsh" -o /tmp/dsh-pack.json \
-            && curl -fsS --max-time 30 "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases?per_page=100" \
-              | jq -r --slurpfile pk /tmp/dsh-pack.json '
-                  ($pk[0]["versions"] | keys) as $published
-                  | [ .[] | .name | sub("^v";"")
-                      | select(test("[0-9]+.[0-9]+.[0-9]+"))
-                      | select(. as $v | $published | index($v)) ]
-                  | .[0]')
+          curl -fsS --max-time 30 "https://registry.npmjs.org/@deepseek-ai/dsh" -o /tmp/dsh-pack.json
+          curl -fsS --max-time 30 "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases?per_page=100" > /tmp/dsh-releases.json
+          CANDIDATES=$(jq -r --slurpfile pk /tmp/dsh-pack.json '
+              ($pk[0]["versions"] | keys) as $published
+              | [ .[] | (.name // .tag_name) | sub("^v";"")
+                  | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+"))
+                  | select(. as $v | $published | index($v)) ]
+              | .[]' /tmp/dsh-releases.json | sort -V)
+          NEW=$(printf '%s\n' "$CANDIDATES" | tail -1)
+          STABLE=$(printf '%s\n' "$CANDIDATES" | grep -v 'alpha' | tail -1 || true)
+
+          MANUAL="${{ github.event.inputs.version }}"
+          if [ -n "$MANUAL" ]; then
+            if ! printf '%s\n' "$CANDIDATES" | grep -qx "$MANUAL"; then
+              echo "指定的 $MANUAL 不是已发布到 npm 的版本"; exit 1
+            fi
+            NEW="$MANUAL"
+            STABLE="$MANUAL"
+          fi
           if [ -z "$NEW" ]; then
             echo "所有 release 均未发布到 npm，跳过"
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "dsh_version=$NEW" >> "$GITHUB_OUTPUT"
           fi
+
+          # latest 只跟非 alpha 的最新版本（rc 或正式版）；alpha 只打自己的版本号标签
+          IS_ALPHA=false
+          case "$NEW" in *alpha*) IS_ALPHA=true;; esac
+          echo "is_alpha=$IS_ALPHA" >> "$GITHUB_OUTPUT"
+          {
+            echo "tags<<EOF"
+            echo "ghcr.io/${{ github.repository }}:$NEW"
+            if [ "$IS_ALPHA" = "false" ]; then
+              echo "ghcr.io/${{ github.repository }}:latest"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
           # 定时触发且该版本镜像已存在 -> 跳过；代码变更或手动触发 -> 总是构建
           if [ "${{ github.event_name }}" = "schedule" ] \
             && docker manifest inspect "ghcr.io/${{ github.repository }}:$NEW" >/dev/null 2>&1; then
             echo "镜像已存在，跳过"
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
+
+          echo "构建版本：$NEW（latest=$( [ "$IS_ALPHA" = "false" ] && echo 会更新 || echo 不动 )；最新非 alpha=$STABLE）"
 
       - name: 登录 GHCR
         if: steps.check.outputs.skip != 'true'
@@ -79,8 +112,6 @@ jobs:
           # ignore-error 让缓存服务不可用时构建不中断
           cache-from: type=gha
           cache-to: type=gha,mode=max,ignore-error=true
-          tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ steps.check.outputs.dsh_version }}
+          tags: ${{ steps.check.outputs.tags }}
           build-args: |
             DSH_VERSION=${{ steps.check.outputs.dsh_version }}
