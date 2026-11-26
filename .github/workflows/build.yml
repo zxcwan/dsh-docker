@@ -35,8 +35,15 @@ jobs:
         id: check
         run: |
           set -euo pipefail
-          curl -fsS --max-time 30 "https://registry.npmjs.org/@deepseek-ai/dsh" -o /tmp/dsh-pack.json
-          curl -fsS --max-time 30 "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases?per_page=100" -o /tmp/dsh-releases.json
+          # 401/403/429 时重试；GitHub API 带 token（未认证只有 60 次/小时，共享 runner IP 很容易被限流）
+          curl -fsS --retry 3 --retry-delay 2 --retry-all-errors --max-time 30 \
+            -H 'User-Agent: dsh-docker-ci' \
+            "https://registry.npmjs.org/@deepseek-ai/dsh" -o /tmp/dsh-pack.json
+          curl -fsS --retry 3 --retry-delay 2 --retry-all-errors --max-time 30 \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'User-Agent: dsh-docker-ci' \
+            "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases?per_page=100" -o /tmp/dsh-releases.json
           python3 scripts/dsh-versions.py /tmp/dsh-pack.json /tmp/dsh-releases.json > /tmp/dsh-versions.txt
           NEWEST=$(sed -n 1p /tmp/dsh-versions.txt)
           STABLE=$(sed -n 2p /tmp/dsh-versions.txt)
