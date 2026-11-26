@@ -1,6 +1,6 @@
 services:
   server:
-    image: ghcr.io/myflv/dsh-gateway
+    image: ghcr.io/zxcwan/dsh-docker:latest
     restart: unless-stopped
     environment:
       AUTH_USER: admin

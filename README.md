@@ -77,7 +77,7 @@ GitHub Actions（`.github/workflows/build.yml`）自动构建推送 GHCR：
 |---|---|
 | push `main` | 立即构建（fork 需先在 Actions 页面点一次 "I understand my workflows"） |
 | `workflow_dispatch` | 手动触发 |
-| schedule 03:17 UTC | 每天检查 dsh 官方新版本，有新版才构建 |
+| schedule 02:00 UTC（北京 10:00） | 每天检查 dsh 官方新版本，有新版才构建 |
 
 dsh 版本 = GitHub release ∩ npm 已发布版本里的最新者，通过 `--build-arg DSH_VERSION`
 注入，`npm install -g @deepseek-ai/dsh@$DSH_VERSION` 从官方 npm 拉取。镜像打两个标签：
@@ -111,7 +111,7 @@ git push fork main        # push 触发 Actions 构建
 - **拉镜像 401**：包还是 private，改 public 或 `docker login ghcr.io`。
 - **Actions 不跑 / push 不触发构建**：fork 仓库需要在 Actions 页面点一次
   "I understand my workflows, go ahead and enable them"。
-- **dsh 提示新版本但镜像还是旧的**：Actions 的 schedule 任务是 03:17 UTC 检查一次；
+- **dsh 提示新版本但镜像还是旧的**：Actions 的 schedule 任务是 02:00 UTC（北京 10:00）检查一次；
   想立刻更新就手动 dispatch 或在仓库 push 一次。
 - **8443 证书警告**：自签证书只用于本机调试，公网请用反代 + 正式证书。
 - **容器重建后 nvm 装的 Node 丢了**：nvm 版本在容器层，重装即可（或写进自己的 Dockerfile）。
