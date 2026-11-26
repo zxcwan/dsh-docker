@@ -155,22 +155,32 @@ jobs:
             DSH_VERSION=${{ steps.check.outputs.stable }}
 
       # 多架构推送只给 index 打标签，各平台仍是裸 digest。
-      # 用 crane 直接把标签打在平台 manifest 上（不再像 imagetools 那样新建一层索引），
-      # 这样包页面就是：索引（latest/版本号）+ amd64 + arm64，条条有名字。
+      # 用 crane 直接把标签打在平台 manifest 上（不新建索引），
+      # 让 stable 和 alpha 都是同一结构：索引 + <版本>-amd64 + <版本>-arm64。
       - name: 给 amd64 / arm64 单独打标签
-        if: steps.check.outputs.skip != 'true' && steps.check.outputs.build_stable == 'true'
+        if: steps.check.outputs.skip != 'true'
+        env:
+          STABLE: ${{ steps.check.outputs.stable }}
+          ALPHA: ${{ steps.check.outputs.alpha }}
+          BUILD_STABLE: ${{ steps.check.outputs.build_stable }}
+          BUILD_ALPHA: ${{ steps.check.outputs.build_alpha }}
         run: |
           set -euo pipefail
           CRANE_VERSION=v0.20.2
           curl -sSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
             | tar -xz -C /usr/local/bin crane
           REPO="ghcr.io/${{ github.repository }}"
-          V="${{ steps.check.outputs.stable }}"
-          mapfile -t PLATFORMS < <(crane manifest "$REPO:$V" | jq -r '.manifests[] | select(.platform.os == "linux") | "\(.platform.architecture) \(.digest)"')
-          for line in "${PLATFORMS[@]}"; do
-            arch="${line%% *}"
-            digest="${line##* }"
-            case "$arch" in
-              amd64|arm64) crane tag "$REPO@$digest" "$V-$arch" && echo "tagged $V-$arch -> $digest" ;;
-            esac
+          targets=()
+          [ "$BUILD_STABLE" = "true" ] && targets+=("$STABLE")
+          [ "$BUILD_ALPHA" = "true" ] && targets+=("$ALPHA")
+          for V in ${targets[@]+"${targets[@]}"}; do
+            [ -n "$V" ] || continue
+            mapfile -t PLATFORMS < <(crane manifest "$REPO:$V" | jq -r '.manifests[] | select(.platform.os == "linux") | "\(.platform.architecture) \(.digest)"')
+            for line in ${PLATFORMS[@]+"${PLATFORMS[@]}"}; do
+              arch="${line%% *}"
+              digest="${line##* }"
+              case "$arch" in
+                amd64|arm64) crane tag "$REPO@$digest" "$V-$arch" && echo "tagged $V-$arch -> $digest" ;;
+              esac
+            done
           done
